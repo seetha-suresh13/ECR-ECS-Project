@@ -7,7 +7,7 @@
   "executionRoleArn": "arn:aws:iam::434965219377:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
-      "name": "website-container",
+      "name": "seetha-container",
       "image": "IMAGE_URI",
       "essential": true,
       "portMappings": [
