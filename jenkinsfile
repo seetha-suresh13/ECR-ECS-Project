@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_ACCOUNT_ID = "434965219377"
+        AWS_REGION = "us-east-1"
+
+        REPOSITORY_NAME = "website"
+        IMAGE_TAG = "${BUILD_NUMBER}"
+
+        CLUSTER_NAME = "website-cluster-1"
+        SERVICE_NAME = "website-service"
+        CONTAINER_NAME = "seetha-container"
+
+        IMAGE_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPOSITORY_NAME}:${IMAGE_TAG}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'master',
+                    credentialsId: 'git-creds',
+                    url: 'https://github.com/seetha-suresh13/ECR-ECS-Project.git'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                docker build -t ${REPOSITORY_NAME}:${IMAGE_TAG} .
+                """
+            }
+        }
+        stage('Login to Amazon ECR') {
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                     credentialsId: 'aws-creds']
+                ]) {
+                    sh '''
+                    aws ecr get-login-password --region $AWS_REGION | \
+                    docker login --username AWS --password-stdin \
+                    $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                    '''
+                }
+            }
+        }
+        stage('Tag Docker Image') {
+            steps {
+                sh """
+                docker tag ${REPOSITORY_NAME}:${IMAGE_TAG} ${IMAGE_URI}
+                """
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                sh """
+                docker push ${IMAGE_URI}
+                """
+            }
+        }
+
+        stage('Deploy to ECS') {
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding',
+                     credentialsId: 'aws-creds']
+                ]) {
+                sh """
+                aws ecs update-service \
+                --cluster ${CLUSTER_NAME} \
+                --service ${SERVICE_NAME} \
+                --force-new-deployment \
+                --region ${AWS_REGION}
+                """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker image prune -f'
+        }
+
+        success {
+            echo 'Deployment completed successfully.'
+        }
+
+        failure {
+            echo 'Deployment failed.'
+        }
+    }
+}
